@@ -11,6 +11,7 @@ import os
 import math
 from collections import defaultdict
 
+lambda_reg = 0.01
 
 class SRTTrainer:
     def __init__(self, model, optimizer, cfg, device, out_dir, render_kwargs):
@@ -73,15 +74,15 @@ class SRTTrainer:
         input_rays = data.get('input_rays').to(device)
         target_pixels = data.get('target_pixels').to(device)
 
-        z = self.model.encoder(input_images, input_camera_pos, input_rays)
+        z, z_masks = self.model.encoder(input_images, input_camera_pos, input_rays)
 
         target_camera_pos = data.get('target_camera_pos').to(device)
         target_rays = data.get('target_rays').to(device)
 
-        loss = 0.
+        loss = lambda_reg * self._compute_l_slot_reg(z_masks)
         loss_terms = dict()
 
-        pred_pixels, extras = self.model.decoder(z, target_camera_pos, target_rays, **self.render_kwargs)
+        pred_pixels, extras = self.model.decoder(z, z_masks, target_camera_pos, target_rays, **self.render_kwargs)
 
         loss = loss + ((pred_pixels - target_pixels)**2).mean((1, 2))
         loss_terms['mse'] = loss
@@ -103,6 +104,29 @@ class SRTTrainer:
                                                                pred_seg.transpose(1, 2))
 
         return loss, loss_terms
+
+    def _compute_l_slot_reg(self, z_masks):
+        """
+        Computes the regularization term L_reg as the expectation of keeping slots.
+        
+        Args:
+            Z (torch.Tensor): A tensor of size (batch_size, K, feature_dim) representing the slots.
+            
+        Returns:
+            torch.Tensor: A scalar tensor representing the L_reg value.
+        """
+        batch_size, K, _ = z_masks.size()
+        
+        # Calculate |Z_i| for each slot
+        slot_norms = z_masks.norm(dim=2)  # (batch_size, K)
+        
+        # Sum over slots to get the expectation term
+        l_reg = slot_norms.sum(dim=1)  # (batch_size)
+        
+        # Take the mean over the batch
+        l_reg = l_reg.mean()
+        
+        return l_reg
 
     def eval_step(self, data, full_scale=False):
         with torch.no_grad():

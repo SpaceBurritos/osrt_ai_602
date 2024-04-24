@@ -197,8 +197,8 @@ if __name__ == '__main__':
     print(f'\tEncoder: {num_encoder_params}')
 
     if cfg['model']['encoder'] == 'osrt':
-        num_srt_encoder_params = sum(p.numel() for p in model.encoder.module.srt_encoder.parameters())
-        num_slotatt_params = sum(p.numel() for p in model.encoder.module.slot_attention.parameters())
+        num_srt_encoder_params = sum(p.numel() for p in encoder_module.srt_encoder.parameters())
+        num_slotatt_params = sum(p.numel() for p in encoder_module.slot_attention.parameters())
         print(f'\t\tSRT Encoder: {num_srt_encoder_params}.')
         print(f'\t\tSlot Attention: {num_slotatt_params}.')
     print(f'\tDecoder: {num_decoder_params}')

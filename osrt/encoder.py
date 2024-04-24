@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from osrt.layers import RayEncoder, Transformer, SlotAttention
+from osrt.layers import RayEncoder, Transformer, SlotAttention, SlotSelection
 
 
 class SRTConvBlock(nn.Module):
@@ -86,9 +86,12 @@ class OSRTEncoder(nn.Module):
         self.slot_attention = SlotAttention(num_slots, slot_dim=slot_dim, iters=slot_iters,
                                             randomize_initial_slots=randomize_initial_slots)
 
+        self.slot_selection = SlotSelection(slot_dim, num_slots)
+
     def forward(self, images, camera_pos, rays):
         set_latents = self.srt_encoder(images, camera_pos, rays)
         slot_latents = self.slot_attention(set_latents)
-        return slot_latents
+        slot_masks = self.slot_selection(slot_latents)
+        return slot_latents, slot_masks
 
 

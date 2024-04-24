@@ -6,6 +6,14 @@ from osrt.layers import RayEncoder, Transformer, PositionalEncoding, SRTLinear
 from osrt.utils import nerf
 
 
+class MaskDecoder(nn.Module):
+    def __init___(self):
+        super(MaskDecoder, self).__init__()
+        pass
+
+    def forward(self, slot):
+        pass
+
 class RayPredictor(nn.Module):
     def __init__(self, num_att_blocks=2, pos_start_octave=0, out_dims=3, input_mlp=None, output_mlp=None,
                  z_dim=1536):
@@ -72,7 +80,7 @@ class MixingBlock(nn.Module):
         self.scale = att_dim ** -0.5
         self.layer_norm = layer_norm
 
-    def forward(self, x, slot_latents):
+    def forward(self, x, slot_latents, slot_masks):
         """
         Args:
             x: query ray features [batch_size, num_rays, input_dim]
@@ -87,7 +95,7 @@ class MixingBlock(nn.Module):
         w = dots.softmax(dim=2)  # [batch_size, num_rays, num_slots]
 
         # [batch_size, num_rays, num_slots, 1] * [batch_size, 1, num_slots, slot_dim]
-        s = (w.unsqueeze(-1) * slot_latents.unsqueeze(1)).sum(2)
+        s = (w.unsqueeze(-1) * (slot_masks * slot_latents).unsqueeze(1)).sum(2)
 
         if self.layer_norm:
             s = self.norm2(s)
@@ -128,13 +136,12 @@ class SlotMixerDecoder(nn.Module):
         # Sigmoid am Ende.
         self.render_mlp = RenderMLP()
 
-    def forward(self, slot_latents, camera_pos, rays, **kwargs):
+    def forward(self, slot_latents, slot_masks, camera_pos, rays, **kwargs):
         x, query_rays = self.allocation_transformer(slot_latents, camera_pos, rays)
-        slot_mix, slot_weights = self.mixing_block(x, slot_latents)
+        slot_mix, slot_weights = self.mixing_block(x, slot_latents, slot_masks)
         pixels = self.render_mlp(torch.cat((slot_mix, query_rays), -1))
         return pixels, {'segmentation': slot_weights}
-
-
+ 
 class ImprovedSRTDecoder(nn.Module):
     """ The new, improved SRT decoder proposed in the OSRT paper. """
     def __init__(self, num_att_blocks=2, pos_start_octave=0):

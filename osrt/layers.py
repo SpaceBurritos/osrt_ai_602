@@ -181,7 +181,48 @@ class Transformer(nn.Module):
             x = ff(x) + x
         return x
 
+class MeanFieldSampling(nn.Module):
+    def __init__(self, slot_dim, num_slots):
+        super(MeanFieldSampling, self).__init__()
+        self.num_slots = num_slots
+        self.slot_predictor = nn.Linear(slot_dim, 2)
 
+    def forward(self, slots):
+        logits = self.slot_predictor(slots)  # (batch_size, num_slots, 2)
+        keep_probs = F.softmax(logits, dim=-1)  # (batch_size, num_slots, 2)
+
+        # Gumbel-Softmax
+        noise = torch.rand_like(keep_probs)
+        gumbel_noise = -torch.log(-torch.log(noise))
+        gumbel_logits = (keep_probs + gumbel_noise) / 0.1  # Temperature 0.1
+        sampled_slots = F.one_hot(gumbel_logits.argmax(-1), num_classes=2)
+
+        # Take the last column for keep/drop decision
+        slot_masks = sampled_slots[..., 1].bool()  # (batch_size, num_slots)
+
+        return slot_masks
+
+class MaskedSlotDecoder(nn.Module):
+    def __init__(self, slot_dim, output_channels):
+        super(MaskedSlotDecoder, self).__init__()
+        self.object_decoder = nn.Linear(slot_dim, output_channels)
+        self.mask_decoder = nn.Conv2d(slot_dim, 1, kernel_size=1)
+
+    def forward(self, slots, slot_masks):
+        batch_size, num_slots, slot_dim = slots.shape
+
+        # Zero Mask Strategy
+        masked_slots = slots * slot_masks.unsqueeze(-1)
+
+        # Decode slots
+        reconstructions = self.object_decoder(masked_slots)
+        masks = self.mask_decoder(masked_slots.view(-1, slot_dim, 1, 1))
+
+        # Apply Zero Mask Strategy
+        masked_masks = masks * slot_masks.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)
+        masked_masks = masked_masks / (masked_masks.sum(-3, keepdim=True) + 1e-6)
+
+        return reconstructions, masked_masks 
 
 class SlotAttention(nn.Module):
     """
@@ -250,5 +291,18 @@ class SlotAttention(nn.Module):
             slots = slots + self.mlp(self.norm_pre_mlp(slots))
 
         return slots
+
+class SlotSelection(nn.Module):
+    def __init__(self, slot_dim, num_slots):
+        super().__init__()
+
+        self.mean_field_sampling = MeanFieldSampling(slot_dim, num_slots)
+        # self.masked_slot_decoder = MaskedSlotDecoder(slot_dim, num_slots)
+        pass
+
+    def forward(self, slots):
+        slot_masks = self.mean_field_sampling(slots)
+        # reconstruction, masked_masks = self.masked_slot_decoder(slots, slot_masks)
+        return slot_masks
 
 
