@@ -202,28 +202,6 @@ class MeanFieldSampling(nn.Module):
 
         return slot_masks
 
-class MaskedSlotDecoder(nn.Module):
-    def __init__(self, slot_dim, output_channels):
-        super(MaskedSlotDecoder, self).__init__()
-        self.object_decoder = nn.Linear(slot_dim, output_channels)
-        self.mask_decoder = nn.Conv2d(slot_dim, 1, kernel_size=1)
-
-    def forward(self, slots, slot_masks):
-        batch_size, num_slots, slot_dim = slots.shape
-
-        # Zero Mask Strategy
-        masked_slots = slots * slot_masks.unsqueeze(-1)
-
-        # Decode slots
-        reconstructions = self.object_decoder(masked_slots)
-        masks = self.mask_decoder(masked_slots.view(-1, slot_dim, 1, 1))
-
-        # Apply Zero Mask Strategy
-        masked_masks = masks * slot_masks.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)
-        masked_masks = masked_masks / (masked_masks.sum(-3, keepdim=True) + 1e-6)
-
-        return reconstructions, masked_masks 
-
 class SlotAttention(nn.Module):
     """
     Slot Attention as introduced by Locatello et al.
@@ -295,14 +273,11 @@ class SlotAttention(nn.Module):
 class SlotSelection(nn.Module):
     def __init__(self, slot_dim, num_slots):
         super().__init__()
-
         self.mean_field_sampling = MeanFieldSampling(slot_dim, num_slots)
-        # self.masked_slot_decoder = MaskedSlotDecoder(slot_dim, num_slots)
         pass
 
     def forward(self, slots):
         slot_masks = self.mean_field_sampling(slots)
-        # reconstruction, masked_masks = self.masked_slot_decoder(slots, slot_masks)
         return slot_masks
 
 
